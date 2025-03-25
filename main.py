@@ -265,34 +265,34 @@ def main():
 
         # Portfolio Optimization
         elif analysis_type == "Portfolio":
-        st.subheader("Portfolio Optimization")
-        risk_free = st.number_input("Risk-Free Rate (%)", 0.0, 10.0, 0.5) / 100
-        
-        if st.button("Optimize Portfolio"):
-            with st.spinner("Running optimization..."):
-                weights, stats = portfolio_optimizer(
-                    tickers, 
-                    start_date, 
-                    end_date, 
-                    risk_free
-                )
-                
-            if weights is not None and stats is not None:
-                st.subheader("Optimization Results")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write("### Optimal Weights")
-                    weights_df = pd.DataFrame({
-                        'Ticker': tickers,
-                        'Weight': weights
-                    }).set_index('Ticker')
-                    st.dataframe(weights_df.style.format("{:.2%}"))
+            st.subheader("Portfolio Optimization")
+            risk_free = st.number_input("Risk-Free Rate (%)", 0.0, 10.0, 0.5) / 100
+            
+            if st.button("Optimize Portfolio"):
+                with st.spinner("Running optimization..."):
+                    weights, stats = portfolio_optimizer(
+                        tickers, 
+                        start_date, 
+                        end_date, 
+                        risk_free
+                    )
                     
-                with col2:
-                    st.write("### Portfolio Statistics")
-                    stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Value'])
-                    st.dataframe(stats_df.style.format("{:.2f}"))
+                if weights is not None and stats is not None:
+                    st.subheader("Optimization Results")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("### Optimal Weights")
+                        weights_df = pd.DataFrame({
+                            'Ticker': tickers,
+                            'Weight': weights
+                        }).set_index('Ticker')
+                        st.dataframe(weights_df.style.format("{:.2%}"))
+                        
+                    with col2:
+                        st.write("### Portfolio Statistics")
+                        stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Value'])
+                        st.dataframe(stats_df.style.format("{:.2f}"))
 
         # My Portfolio Analysis
         elif analysis_type == "My Portfolio":
