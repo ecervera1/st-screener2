@@ -75,14 +75,14 @@ def get_financial_metrics(ticker):
         info = stock.info
         return {
             "Price": info.get("currentPrice", 0),
-            "Mkt Cap (B)": round((info.get("marketCap", 0) or 0) / 1e9,
+            "Mkt Cap (B)": round((info.get("marketCap", 0) or 0) / 1e9, 2),  # Fixed line
             "P/E": round(info.get("trailingPE", 0), 1),
-            "Div Yield": f"{round(info.get('dividendYield', 0)*100:.2f}%" if info.get('dividendYield') else '-',
+            "Div Yield": f"{round(info.get('dividendYield', 0)*100, 2)}%" if info.get('dividendYield') else '-',
             "52W Low": info.get("fiftyTwoWeekLow", 0),
             "52W High": info.get("fiftyTwoWeekHigh", 0),
-            "Profit Margin": f"{round(info.get('profitMargins', 0)*100:.1f}%" if info.get('profitMargins') else '-',
-            "ROA": f"{round(info.get('returnOnAssets', 0)*100:.1f}%" if info.get('returnOnAssets') else '-',
-            "ROE": f"{round(info.get('returnOnEquity', 0)*100:.1f}%" if info.get('returnOnEquity') else '-'
+            "Profit Margin": f"{round(info.get('profitMargins', 0)*100, 1)}%" if info.get('profitMargins') else '-',
+            "ROA": f"{round(info.get('returnOnAssets', 0)*100, 1)}%" if info.get('returnOnAssets') else '-',
+            "ROE": f"{round(info.get('returnOnEquity', 0)*100, 1)}%" if info.get('returnOnEquity') else '-'
         }
     except Exception as e:
         st.error(f"Metrics error: {e}")
