@@ -36,6 +36,10 @@ def configure_page():
     .title {text-align: center; color: white; font-size: 2.5em;}
     .subheader {text-align: center; color: white; font-size: 1.8em;}
     .caption {text-align: center; color: lightblue; font-size: 1em;}
+    .news-item {margin-bottom: 10px; font-size: 0.9em;}
+    .dataframe {font-size: 0.85em; margin: 0 auto;}
+    .dataframe th {padding: 0.5em !important;}
+    .dataframe td {padding: 0.5em !important;}
     </style>
     """
     st.markdown(hide_ui_elements, unsafe_allow_html=True)
@@ -58,7 +62,7 @@ def fetch_stock_data(tickers, start_date, end_date, column='Close'):
     try:
         data = yf.download(tickers, start=start_date, end=end_date, progress=False)
         if data.empty:
-            st.error(f"No data found for {tickers} between {start_date} and {end_date}")
+            st.error(f"No data found for {tickers}")
             return pd.DataFrame()
         return data[column] if column in data.columns else data['Close']
     except Exception as e:
@@ -70,19 +74,18 @@ def get_financial_metrics(ticker):
         stock = yf.Ticker(ticker)
         info = stock.info
         return {
-            "Current Price": info.get("currentPrice", 0),
-            "Market Cap (B)": (info.get("marketCap", 0) or 0) / 1e9,
-            "PE Ratio": info.get("trailingPE", 0),
-            "Div Yield": info.get("dividendYield", 0) or 0,
+            "Price": info.get("currentPrice", 0),
+            "Mkt Cap (B)": round((info.get("marketCap", 0) or 0) / 1e9,
+            "P/E": round(info.get("trailingPE", 0), 1),
+            "Div Yield": f"{round(info.get('dividendYield', 0)*100:.2f}%" if info.get('dividendYield') else '-',
             "52W Low": info.get("fiftyTwoWeekLow", 0),
             "52W High": info.get("fiftyTwoWeekHigh", 0),
-            "52W Range": f"{info.get('fiftyTwoWeekLow', 0):.2f} - {info.get('fiftyTwoWeekHigh', 0):.2f}",
-            "Profit Margin": info.get("profitMargins", 0),
-            "ROA": info.get("returnOnAssets", 0),
-            "ROE": info.get("returnOnEquity", 0)
+            "Profit Margin": f"{round(info.get('profitMargins', 0)*100:.1f}%" if info.get('profitMargins') else '-',
+            "ROA": f"{round(info.get('returnOnAssets', 0)*100:.1f}%" if info.get('returnOnAssets') else '-',
+            "ROE": f"{round(info.get('returnOnEquity', 0)*100:.1f}%" if info.get('returnOnEquity') else '-'
         }
     except Exception as e:
-        st.error(f"Error fetching metrics: {e}")
+        st.error(f"Metrics error: {e}")
         return {}
 
 def generate_prophet_forecast(ticker, start_date, end_date, forecast_days=365):
@@ -112,76 +115,82 @@ def monte_carlo_simulation(data, simulations=1000, days=252):
         
         final_prices = initial * (1 + np.random.normal(mu, sigma, (days, simulations))).cumprod(axis=0)[-1]
         
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 6))
         ax.hist(final_prices, bins=50)
-        ax.set(xlabel='Price', ylabel='Frequency', title='Monte Carlo Simulation Results')
-        stats = f"Mean: {final_prices.mean():.2f}\nMedian: {np.median(final_prices):.2f}\nStd: {final_prices.std():.2f}"
-        ax.text(0.05, 0.95, stats, transform=ax.transAxes, va='top', bbox=dict(facecolor='white', alpha=0.8))
+        ax.set(xlabel='Price', ylabel='Frequency', title='Monte Carlo Simulation')
+        stats = f"Mean: {final_prices.mean():.2f}\nMedian: {np.median(final_prices):.2f}\nStd Dev: {final_prices.std():.2f}"
+        ax.text(0.05, 0.95, stats, transform=ax.transAxes, va='top', 
+                bbox=dict(facecolor='white', alpha=0.8))
         return fig, final_prices
     except Exception as e:
         st.error(f"Simulation error: {str(e)}")
         return None, None
 
+# ======================
+# Comparison Charts
+# ======================
 def create_comparison_charts(tickers, start_date, end_date):
     try:
-        # Current date range data
+        # Current data
         data = fetch_stock_data(tickers, start_date, end_date)
         if data.empty:
             return
 
-        # 10-year historical data
+        # 10-year data
         ten_year_start = datetime.now() - timedelta(days=365*10)
         data_10yr = fetch_stock_data(tickers, ten_year_start, end_date)
         
-        # Performance Charts
-        st.title('Stock Performance Chart')
-        st.line_chart(data)
-        
-        st.title('10-Year Historical Performance')
-        st.line_chart(data_10yr)
+        st.title('Price Performance')
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("#### Selected Period")
+            st.line_chart(data)
+        with col2:
+            st.write("#### 10-Year History")
+            st.line_chart(data_10yr)
 
-        # Financial Metrics Table
-        st.title('Stock Data')
-        metrics = pd.DataFrame({t: get_financial_metrics(t) for t in tickers}).T.fillna('-')
-        st.table(metrics)
+        # Financial metrics
+        st.title('Financial Metrics')
+        metrics = pd.DataFrame({t: get_financial_metrics(t) for t in tickers}).T
+        st.table(metrics.style.set_properties(**{'text-align': 'center'}))
 
-        # Detailed Comparison Charts
+        # Detailed charts
+        st.title('Detailed Analysis')
         num_subplots = len(tickers) + 1
         fig, axs = plt.subplots(num_subplots, 5, figsize=(28, num_subplots*4), gridspec_kw={'wspace': 0.5})
         
-        # Header Row
-        labels = ["Ticker", "Market Cap", "Financial Metrics", "Revenue Comparison", "52-Week Range"]
+        # Header row
+        labels = ["Ticker", "Market Cap", "Metrics", "Revenue", "52W Range"]
         for j in range(5):
             axs[0, j].axis('off')
-            axs[0, j].text(0.5, 0.5, labels[j], ha='center', va='center', fontsize=25, fontweight='bold')
+            axs[0, j].text(0.5, 0.5, labels[j], ha='center', va='center', 
+                          fontsize=22, fontweight='bold')
 
         for i, ticker in enumerate(tickers, 1):
-            # Ticker Label
+            # Ticker label
             axs[i, 0].axis('off')
-            axs[i, 0].text(0.5, 0.5, ticker, ha='center', va='center', fontsize=30)
+            axs[i, 0].text(0.5, 0.5, ticker, ha='center', va='center', fontsize=26)
 
-            # Market Cap Visualization
-            market_cap = get_financial_metrics(ticker).get("Market Cap (B)", 0) * 1e9
-            max_market_cap = max([get_financial_metrics(t).get("Market Cap (B)", 0) * 1e9 for t in tickers])
-            ax = axs[i, 1]
-            relative_size = (market_cap / max_market_cap) if max_market_cap > 0 else 0
-            circle = plt.Circle((0.5, 0.5), relative_size * 0.5, color='lightblue')
-            ax.add_artist(circle)
-            ax.text(0.5, 0.5, f"{market_cap/1e9:.2f}B", ha='center', va='center', fontsize=20)
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
-            ax.axis('off')
-
-            # Financial Metrics
+            # Market cap bubble
             metrics = get_financial_metrics(ticker)
-            ax = axs[i, 2]
-            values = [metrics.get("Profit Margin", 0)*100, 
-                     metrics.get("ROA", 0)*100, 
-                     metrics.get("ROE", 0)*100]
-            ax.barh(["Profit Margin", "ROA", "ROE"], values, color=['#A3C5A8', '#B8D4B0', '#C8DFBB'])
+            market_cap = metrics["Mkt Cap (B)"] * 1e9
+            max_mcap = max([get_financial_metrics(t)["Mkt Cap (B)"] * 1e9 for t in tickers])
+            ax = axs[i, 1]
+            rel_size = (market_cap / max_mcap) if max_mcap > 0 else 0.1
+            circle = plt.Circle((0.5, 0.5), rel_size*0.5, color='lightblue')
+            ax.add_artist(circle)
+            ax.text(0.5, 0.5, f"{metrics['Mkt Cap (B)']:.1f}B", ha='center', va='center', fontsize=18)
             ax.axis('off')
 
-            # Revenue Comparison
+            # Financial metrics
+            ax = axs[i, 2]
+            values = [float(metrics["Profit Margin"].strip('%')) if metrics["Profit Margin"] != '-' else 0,
+                     float(metrics["ROA"].strip('%')) if metrics["ROA"] != '-' else 0,
+                     float(metrics["ROE"].strip('%')) if metrics["ROE"] != '-' else 0]
+            ax.barh(["Profit", "ROA", "ROE"], values, color=['#A3C5A8', '#B8D4B0', '#C8DFBB'])
+            ax.axis('off')
+
+            # Revenue comparison
             stock = yf.Ticker(ticker)
             rev = stock.financials.loc["Total Revenue"].iloc[:2]/1e9
             ax = axs[i, 3]
@@ -189,15 +198,15 @@ def create_comparison_charts(tickers, start_date, end_date):
             ax.plot([0, 1], rev, color='green' if rev[0] < rev[1] else 'red', marker='o')
             ax.axis('off')
 
-            # 52-Week Range
-            prices = get_financial_metrics(ticker)
+            # 52-week range
             ax = axs[i, 4]
+            current_price = metrics["Price"]
+            low = metrics["52W Low"]
+            high = metrics["52W High"]
             ax.axhline(0.5, xmin=0, xmax=1, color='black', linewidth=3)
-            ax.scatter(prices["Current Price"], 0.5, color='red', s=200)
-            if prices["52W Low"] > 0 and prices["52W High"] > 0:
-                ax.set_xlim(prices["52W Low"]*0.95, prices["52W High"]*1.05)
-            else:
-                ax.set_xlim(0, data.max()*1.05)
+            ax.scatter(current_price, 0.5, color='red', s=200)
+            if low > 0 and high > 0:
+                ax.set_xlim(low*0.95, high*1.05)
             ax.axis('off')
 
         plt.tight_layout()
@@ -211,7 +220,7 @@ def create_comparison_charts(tickers, start_date, end_date):
 def portfolio_optimizer(tickers, start_date, end_date, risk_free_rate=0.0):
     try:
         if not tickers:
-            st.error("Please enter valid tickers")
+            st.error("Enter valid tickers")
             return None, None
             
         data = pd.DataFrame()
@@ -222,18 +231,18 @@ def portfolio_optimizer(tickers, start_date, end_date, risk_free_rate=0.0):
                 data[t] = stock_data
                 valid_tickers.append(t)
         
-        if len(valid_tickers) < 1:
-            st.error("No valid data found")
+        if len(valid_tickers) < 2:
+            st.error("Need at least 2 valid tickers")
             return None, None
             
         returns = data.pct_change().dropna()
         if returns.empty:
-            st.error("Insufficient data for returns")
+            st.error("Insufficient data")
             return None, None
             
         cov_matrix = returns.cov()
         if cov_matrix.isnull().values.any():
-            st.error("Invalid covariance matrix")
+            st.error("Invalid data")
             return None, None
 
         def negative_sharpe(weights):
@@ -242,17 +251,11 @@ def portfolio_optimizer(tickers, start_date, end_date, risk_free_rate=0.0):
             return -(port_return - risk_free_rate) / port_vol if port_vol != 0 else -np.inf
 
         constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-        bounds = tuple((0, 1) for _ in range(len(valid_tickers)))
+        bounds = tuple((0, 1) for _ in valid_tickers)
         initial_guess = [1./len(valid_tickers)] * len(valid_tickers)
 
-        result = minimize(
-            negative_sharpe,
-            initial_guess,
-            method='SLSQP',
-            bounds=bounds,
-            constraints=constraints,
-            options={'maxiter': 1000}
-        )
+        result = minimize(negative_sharpe, initial_guess, 
+                        method='SLSQP', bounds=bounds, constraints=constraints)
 
         if not result.success:
             raise RuntimeError(f"Optimization failed: {result.message}")
@@ -264,24 +267,24 @@ def portfolio_optimizer(tickers, start_date, end_date, risk_free_rate=0.0):
             'Sharpe': -result.fun
         }
         
-        # Efficient frontier plot
+        # Efficient frontier
         port_returns = []
         port_volatility = []
         for _ in range(5000):
-            weights = np.random.random(len(valid_tickers))
-            weights /= np.sum(weights)
-            port_returns.append(np.dot(weights, returns.mean()) * 252)
-            port_volatility.append(np.sqrt(weights.T @ cov_matrix @ weights) * np.sqrt(252))
+            w = np.random.random(len(valid_tickers))
+            w /= w.sum()
+            port_returns.append(np.dot(w, returns.mean()) * 252)
+            port_volatility.append(np.sqrt(w.T @ cov_matrix @ w) * np.sqrt(252))
             
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(10, 6))
         plt.scatter(port_volatility, port_returns, 
                    c=(np.array(port_returns)-risk_free_rate)/np.array(port_volatility),
-                   cmap='YlGnBu')
+                   cmap='YlGnBu', alpha=0.5)
         plt.scatter(stats['Volatility'], stats['Return'], 
-                   color='red', marker='X', s=200)
+                   color='red', marker='X', s=200, label='Optimal')
         plt.colorbar(label='Sharpe Ratio')
         plt.xlabel('Volatility')
-        plt.ylabel('Expected Returns')
+        plt.ylabel('Return')
         plt.title('Efficient Frontier')
         st.pyplot(plt)
         
@@ -295,22 +298,27 @@ def portfolio_optimizer(tickers, start_date, end_date, risk_free_rate=0.0):
 # ======================
 def show_news(ticker):
     try:
-        st.subheader(f"News for {ticker}")
-        url = f"https://finance.yahoo.com/quote/{ticker}"
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        st.subheader(f"📰 Latest News for {ticker}")
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        url = f"https://finance.yahoo.com/quote/{ticker}/news"
+        response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
         news_items = []
-        for h in soup.find_all("h3", class_="Mb(5px)"):
-            link = h.find('a')
-            if link: 
+        for item in soup.find_all('h3', class_='Mb(5px)'):
+            link = item.find('a')
+            if link and link.text.strip():
                 news_items.append({
-                    "title": link.text,
-                    "url": f"https://finance.yahoo.com{link['href']}"
+                    'title': link.text.strip(),
+                    'url': f"https://finance.yahoo.com{link['href']}"
                 })
         
-        for idx, item in enumerate(news_items[:10]):
-            st.markdown(f"{idx+1}. [{item['title']}]({item['url']})")
+        for idx, item in enumerate(news_items[:5]):
+            st.markdown(f"""
+            <div class="news-item">
+            {idx+1}. <a href="{item['url']}" target="_blank">{item['title']}</a>
+            </div>
+            """, unsafe_allow_html=True)
     except Exception as e:
         st.error(f"News error: {str(e)}")
 
@@ -319,9 +327,9 @@ async def fetch_finviz_data(ticker):
         async with RetryClient(retry_options=ExponentialRetry(attempts=3)) as client:
             quote = Quote(ticker=ticker)
             return {
-                'fundamentals': quote.fundamental_df,
-                'news': quote.outer_news_df,
-                'insider': quote.insider_trading_df
+                'fundamentals': quote.fundamental_df.T.style.format("{:.2f}"),
+                'news': quote.outer_news_df.head(5),
+                'insider': quote.insider_trading_df.head(5)
             }
     except Exception as e:
         st.error(f"FinViz error: {e}")
@@ -330,22 +338,22 @@ async def fetch_finviz_data(ticker):
 def show_finviz_section():
     st.sidebar.title("FinViz Data")
     if st.sidebar.checkbox("Show FinViz Data"):
-        ticker = st.sidebar.text_input("Enter ticker:", "AAPL")
-        if st.button("Fetch FinViz Data"):
-            with st.spinner("Fetching..."):
+        ticker = st.sidebar.text_input("Ticker:", "AAPL")
+        if st.button("Fetch"):
+            with st.spinner("Loading..."):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 data = loop.run_until_complete(fetch_finviz_data(ticker))
                 
                 if data:
-                    st.subheader("Fundamental Data")
-                    st.dataframe(data['fundamentals'])
+                    st.subheader("Fundamentals")
+                    st.table(data['fundamentals'])
                     
                     st.subheader("Recent News")
-                    st.dataframe(data['news'])
+                    st.table(data['news'])
                     
-                    st.subheader("Insider Trading")
-                    st.dataframe(data['insider'])
+                    st.subheader("Insider Activity")
+                    st.table(data['insider'])
 
 # ======================
 # Main Application
@@ -355,7 +363,6 @@ def main():
     create_header()
     show_finviz_section()
 
-    # Sidebar Controls
     with st.sidebar:
         st.title("Controls")
         user_input = st.text_input("Tickers (comma separated)", "LLY, ABT, MRNA, JNJ")
@@ -364,7 +371,7 @@ def main():
         start_date = st.date_input("Start Date", datetime(2021,1,1))
         end_date = st.date_input("End Date", datetime.today())
         
-        analysis_type = st.radio("Analysis Type", [
+        analysis_type = st.radio("Analysis", [
             "Performance", 
             "Financials", 
             "Forecasting", 
@@ -375,35 +382,39 @@ def main():
         if st.button('Run Analysis'):
             st.session_state.run_analysis = True
 
-    # Main Content
     if 'run_analysis' in st.session_state:
         try:
             if analysis_type == "Performance":
                 create_comparison_charts(tickers, start_date, end_date)
 
             elif analysis_type == "Financials":
-                st.subheader(f"Financial Statements - {selected_stock}")
+                st.subheader(f"Financials - {selected_stock}")
                 financials = yf.Ticker(selected_stock)
                 
-                if st.checkbox("Show Income Statement"):
-                    st.dataframe(financials.financials)
-                if st.checkbox("Show Balance Sheet"):
-                    st.dataframe(financials.balance_sheet)
-                if st.checkbox("Show Cash Flow"):
-                    st.dataframe(financials.cashflow)
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.checkbox("Income Statement"):
+                        st.table(financials.financials.style.format("{:.0f}"))
+                with col2:
+                    if st.checkbox("Balance Sheet"):
+                        st.table(financials.balance_sheet.style.format("{:.0f}"))
+                if st.checkbox("Cash Flow"):
+                    st.table(financials.cashflow.style.format("{:.0f}"))
 
             elif analysis_type == "Forecasting":
                 st.subheader(f"Forecasting - {selected_stock}")
-                forecast_days = st.slider("Days to forecast", 30, 365*3, 365)
+                forecast_days = st.slider("Forecast Horizon (days)", 30, 365*3, 365)
                 
-                if st.checkbox("Show Prophet Forecast"):
-                    fig = generate_prophet_forecast(selected_stock, start_date, end_date, forecast_days)
-                    if fig: st.pyplot(fig)
-                
-                if st.checkbox("Run Monte Carlo Simulation"):
-                    data = fetch_stock_data(selected_stock, start_date, end_date)
-                    fig, _ = monte_carlo_simulation(data)
-                    if fig: st.pyplot(fig)
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.checkbox("Show Prophet Forecast"):
+                        fig = generate_prophet_forecast(selected_stock, start_date, end_date, forecast_days)
+                        if fig: st.pyplot(fig)
+                with col2:
+                    if st.checkbox("Run Monte Carlo"):
+                        data = fetch_stock_data(selected_stock, start_date, end_date)
+                        fig, _ = monte_carlo_simulation(data)
+                        if fig: st.pyplot(fig)
 
             elif analysis_type == "Portfolio":
                 st.subheader("Portfolio Optimization")
@@ -414,16 +425,16 @@ def main():
                         st.subheader("Results")
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.write("### Weights")
-                            weights_df = pd.DataFrame({
+                            st.write("### Allocation")
+                            alloc = pd.DataFrame({
                                 'Ticker': tickers,
                                 'Weight': weights
                             }).set_index('Ticker')
-                            st.dataframe(weights_df.style.format("{:.2%}"))
+                            st.table(alloc.style.format("{:.1%}"))
                         with col2:
                             st.write("### Statistics")
                             stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Value'])
-                            st.dataframe(stats_df.style.format("{:.2f}"))
+                            st.table(stats_df.style.format("{:.2f}"))
 
             elif analysis_type == "News":
                 show_news(selected_stock)
