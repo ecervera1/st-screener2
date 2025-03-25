@@ -1,0 +1,13 @@
+streamlit
+yfinance
+pandas
+matplotlib
+plotly
+numpy
+prophet
+numpy
+scipy
+seaborn
+aiohttp_retry
+pyfinviz
+st-theme
