@@ -63,7 +63,8 @@ def get_financial_metrics(ticker):
         info = stock.info
         return {
             "Price": info.get('currentPrice', '-'),
-            "Mkt Cap (B)": f"{(info.get('marketCap', 0)/1e9:.2f}" if info.get('marketCap') else '-',
+            # Fix the f-string formatting:
+            "Mkt Cap (B)": f"{(info.get('marketCap', 0) / 1e9):.2f}" if info.get('marketCap') else '-',
             "P/E": f"{info.get('trailingPE', '-')}",
             "Div Yield": f"{info.get('dividendYield', 0)*100:.2f}%" if info.get('dividendYield') else '-',
             "52W Range": f"{info.get('fiftyTwoWeekLow', '-')} - {info.get('fiftyTwoWeekHigh', '-')}",
