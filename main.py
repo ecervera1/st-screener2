@@ -1420,3 +1420,129 @@ if st.sidebar.checkbox("FinViz Data Viewer"):
                 results = asyncio.run(fetch_all_quote_data(tickers, selected_data_types))
                 st.session_state["data"] = results
         display_data(st.session_state["data"])
+
+
+#Adding SEC DCF - 03/26/2025
+
+# Add to imports
+from sec_edgar_downloader import Downloader
+import xml.etree.ElementTree as ET
+from financialstatements import FinancialStatements
+
+# Add this to the sidebar
+st.sidebar.title("Advanced Valuation")
+if st.sidebar.checkbox("Advanced DCF Model (SEC EDGAR)"):
+    st.title("SEC EDGAR-based DCF Valuation")
+    
+    # DCF Input Parameters
+    st.header("DCF Model Parameters")
+    col1, col2 = st.columns(2)
+    with col1:
+        risk_free_rate = st.number_input("Risk-Free Rate (%)", value=2.5, step=0.1)/100
+        terminal_growth = st.number_input("Terminal Growth Rate (%)", value=2.5, step=0.1)/100
+    with col2:
+        market_risk_premium = st.number_input("Market Risk Premium (%)", value=5.5, step=0.1)/100
+        debt_ratio = st.number_input("Target Debt Ratio (%)", value=30.0, step=0.1)/100
+
+    # EDGAR Data Retrieval
+    @st.cache_data
+    def get_sec_financials(ticker):
+        dl = Downloader("MyCompany", "my.email@domain.com")
+        dl.get("10-K", ticker, limit=1)
+        
+        # Parse financial statements
+        fs = FinancialStatements()
+        statements = fs.get(ticker)
+        
+        return {
+            "income_statement": statements.income_statement,
+            "balance_sheet": statements.balance_sheet,
+            "cash_flow": statements.cash_flow,
+            "metrics": statements.metrics
+        }
+
+    # DCF Calculation
+    def calculate_dcf(financials, rfr, mrp, terminal_growth, debt_ratio):
+        # Calculate WACC
+        beta = yf.Ticker(ticker).info['beta']
+        cost_of_equity = rfr + beta * mrp
+        cost_of_debt = financials['metrics']['interest_coverage']
+        wacc = (cost_of_equity * (1 - debt_ratio)) + (cost_of_debt * debt_ratio)
+        
+        # Project FCF
+        revenue_growth = financials['metrics']['revenue_growth_3yr']
+        op_margin = financials['metrics']['operating_margin']
+        tax_rate = financials['metrics']['effective_tax_rate']
+        
+        projections = []
+        current_fcf = financials['cash_flow']['freeCashFlow']
+        for year in range(1, 6):
+            projection = {
+                'year': year,
+                'revenue_growth': revenue_growth * (1 - 0.05*year),  # Decelerating growth
+                'op_margin': op_margin,
+                'fcf': current_fcf * (1 + revenue_growth)
+            }
+            projections.append(projection)
+            current_fcf = projection['fcf']
+        
+        # Terminal Value
+        terminal_value = projections[-1]['fcf'] * (1 + terminal_growth) / (wacc - terminal_growth)
+        
+        # DCF Calculation
+        present_value = sum([p['fcf']/(1+wacc)**p['year'] for p in projections]) 
+        present_value += terminal_value/(1+wacc)**5
+        
+        # Return per share value
+        shares_outstanding = financials['balance_sheet']['commonStock']
+        return present_value / shares_outstanding
+
+    # Main Execution
+    ticker = st.text_input("Enter SEC-registered Ticker Symbol:", "AAPL").upper()
+    
+    if st.button("Run Advanced DCF Analysis"):
+        with st.spinner("Fetching SEC filings and calculating..."):
+            try:
+                financials = get_sec_financials(ticker)
+                
+                if not financials['income_statement']:
+                    st.error("Could not retrieve financial statements from EDGAR")
+                else:
+                    # Display Financials
+                    st.subheader("Financial Statements from SEC Filings")
+                    st.dataframe(financials['income_statement'].tail(3))
+                    st.dataframe(financials['balance_sheet'].tail(3))
+                    st.dataframe(financials['cash_flow'].tail(3))
+                    
+                    # Calculate DCF
+                    dcf_value = calculate_dcf(financials, risk_free_rate, 
+                                           market_risk_premium, terminal_growth,
+                                           debt_ratio)
+                    
+                    # Get current price
+                    current_price = yf.Ticker(ticker).info['currentPrice']
+                    
+                    # Display Results
+                    st.subheader("DCF Valuation Results")
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("DCF Value", f"${dcf_value:.2f}")
+                    col2.metric("Current Price", f"${current_price:.2f}")
+                    col3.metric("Margin of Safety", 
+                              f"{(dcf_value - current_price)/dcf_value:.1%}")
+                    
+                    # Sensitivity Analysis
+                    st.subheader("Sensitivity Analysis")
+                    wacc_values = np.linspace(wacc*0.8, wacc*1.2, 5)
+                    growth_values = np.linspace(terminal_growth*0.5, terminal_growth*1.5, 5)
+                    
+                    sensitivity = pd.DataFrame(index=growth_values, 
+                                              columns=wacc_values)
+                    for g in growth_values:
+                        for w in wacc_values:
+                            sensitivity.loc[g,w] = calculate_dcf(financials, w, 
+                                                               market_risk_premium,
+                                                               g, debt_ratio)
+                    st.dataframe(sensitivity.style.format("${:.2f}"))
+                    
+            except Exception as e:
+                st.error(f"Error in DCF calculation: {str(e)}")
