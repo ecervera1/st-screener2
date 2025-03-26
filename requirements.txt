@@ -11,3 +11,5 @@ seaborn
 aiohttp_retry
 pyfinviz
 st-theme
+sec-edgar-downloader
+financialstatements
